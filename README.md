@@ -4,7 +4,7 @@
 Over the course of many years we have sequenced RNA and DNA from a large variety of species. When we compared different sequencing runs we have noticed that the performance of Oxford Nanopore Minion flow cells varied drastically across runs. In order systematically analyse which factors do or do not influence the lifetime of a flowcell (and consequently the number of sequenced bases) we analyses several parameters that vary across sequencing runs.
 
 ### Input data from the wetlab
-- Wetlab data: Data related to wetlab (e.g. amount of library loaded on flowcell etc) was manually gathered by the staff in the laboratory. All information can be found at ./_data/wetlab_data_230607.csv.
+- Data related to wetlab (e.g. amount of library loaded on flowcell etc) was manually gathered by the staff in the laboratory. All information can be found at ./_data/wetlab_data_230607.csv.
 
 ### Input data from the drylab
 - **Flow cell half-life**: The half-life of each flow cell was calculated using the *drift_correction* files which are generated with each sequencing run. We concatenated the drift correction files upon clean up using costum scripts (./_scripts/cleanup_drifts.R; ./scripts/cleanup_drifts.sh). The input file containing all drift_correction data can be found at ./_data/all_cleaned_drifts.csv. For each run a logistic model was built fitting the number of channels over time using the script: **./_scripts/DARIA**. All flow cell half-life values can be found at ./_data/halflifetimes_curated20230526.txt.
