@@ -1,0 +1,304 @@
+---
+title: "Analysis of Nanopore Metadata for Meyer et al., 2023"
+author: "Damian Wollny"
+output:
+  html_document:
+    theme: paper
+    df_print: kable
+    code_folding: hide
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+editor_options: 
+  chunk_output_type: console
+---
+
+<style type="text/css">
+  body{
+  font-size: 14pt;
+}
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+```
+
+```{r}
+library(tidyverse)
+library(RColorBrewer)
+library(ggpubr)
+theme_set(theme_classic(base_size = 15))
+```
+
+
+```{r}
+# Open files
+master_plus <- 
+  readRDS(file = "../_analysis/master_plus.RDS") %>% 
+  mutate(hours_since_start = seconds_since_start_of_run / 3600,
+         fc_half_life_hours = fc_half_life/3600) %>% 
+  mutate(sample_type = as.factor(sample_type))
+
+# Assign specific & consistent colors to each sample_type
+sample_colors <- brewer.pal(9, "Spectral")
+```
+
+### **Fig.1:** Relationship between flow cell half-life and sequencing yield
+
+```{r}
+# get max est_bases value
+max_est_bases <- master_plus %>% drop_na(est_bases) %>% pull(est_bases) %>% max()
+
+master_plus %>% 
+  select(fc_half_life_hours, est_bases, RNA.or.DNA, sample_type) %>% 
+  distinct() %>% 
+  drop_na(est_bases) %>% 
+  ggplot(aes(fc_half_life_hours, est_bases, color = RNA.or.DNA)) + 
+  geom_point(alpha = .5, size = 2) +
+  stat_smooth(method = "lm") +
+  facet_wrap(~sample_type) +
+  labs(x = "Flow cell half-life [hours]", y = "Number of sequenced bases", color = "") +
+  theme(legend.position = "none") +
+  ylim(c(0,max_est_bases))
+```
+
+### **Fig.2:** Flow cell half-lifes for different samples
+
+```{r}
+master_plus %>% 
+  select(run_id, RNA.or.DNA, fc_half_life_hours, sample_type) %>% 
+  distinct() %>% 
+  ggplot(aes(x = sample_type, y = fc_half_life_hours, fill = RNA.or.DNA)) +
+  geom_boxplot() +
+  geom_point() +
+  facet_wrap(.~RNA.or.DNA, ncol = 1) +
+  coord_flip() +
+  labs(x = "", y = "Flow cell half-life [hours]") +
+  theme(legend.position = "none")
+```
+
+### **Fig.3:** Flow cell revival analysis
+
+```{r}
+# remove runs for which flow cell was only used once 
+single_use_flowcells <- master_plus %>% 
+  select(sample_type, fc_age, fc_used, run_id, flow_cell_id, sample_id) %>% 
+  distinct() %>% 
+  group_by(flow_cell_id) %>% 
+  summarise(n = n()) %>% 
+  filter(n == 1) %>% 
+  pull(flow_cell_id)
+
+# insect dna is bad
+master_plus %>% 
+  filter(!flow_cell_id %in% single_use_flowcells) %>% 
+  filter(flow_cell_id %in% c("FAO12159", "FAO12153", "FAO10418", "FAO92001")) %>% 
+  select(sample_type, fc_half_life_hours, fc_used, run_id, flow_cell_id, ng.library.loaded) %>% 
+  distinct() %>% 
+  ggplot(aes(y = fc_half_life_hours, x = as.factor(fc_used))) +
+  geom_line(aes(group = flow_cell_id)) +
+  geom_point(aes(color = sample_type), size = 3, alpha = .7) +
+  facet_wrap(.~flow_cell_id) +
+  labs(y = "Flow cell half-life [hours]", x = "Number of times flowcell was reused", 
+       color = "Sample Type") 
+```
+
+### **Fig. 5:** Effect of reusage on flow cell half-life
+
+```{r}
+# human or insect runs for which flow cell was only used once 
+single_runs <- master_plus %>% 
+  filter(sample_type == "human" | sample_type == "insect") %>% 
+  select(sample_type, fc_age, fc_used, run_id, flow_cell_id) %>% 
+  distinct() %>% 
+  group_by(flow_cell_id) %>% 
+  summarise(n = n()) %>% 
+  filter(n == 1) %>% 
+  pull(flow_cell_id)
+
+# flow cells which saw anything other than insect or human
+unpure_flowcells <- master_plus %>% 
+  select(sample_type, fc_age, fc_half_life_hours, fc_used, run_id, flow_cell_id, starting_channel_number, Wash) %>% 
+  distinct() %>% 
+  filter(sample_type != "insect", sample_type != "human") %>% 
+  pull(flow_cell_id)
+
+# kick out human runs which were washed mulitple times during the same run
+multiwash_human <- master_plus %>% 
+  filter(sample_type == "human") %>% 
+  select(sample_type, fc_age, fc_used, run_id, flow_cell_id) %>% 
+  distinct() %>% 
+  group_by(flow_cell_id, run_id) %>% 
+  summarise(n = n()) %>% 
+  filter(n > 1) %>% 
+  pull(flow_cell_id)
+
+master_plus %>% 
+  filter(!flow_cell_id %in% unpure_flowcells) %>% 
+  filter(!flow_cell_id %in% single_runs) %>% 
+  filter(!flow_cell_id %in% multiwash_human) %>% 
+  select(sample_type, fc_age, fc_half_life_hours, fc_used, run_id, flow_cell_id, starting_channel_number, Wash) %>% 
+  distinct() %>% 
+  # kick out flow cells for which one datapoint was missing because fc_half_life = NA
+  filter(!flow_cell_id %in% c("FAO10430", "FAO92100")) %>% 
+  arrange(desc(fc_used)) %>% 
+  ggplot(aes(y = fc_half_life_hours, x = as.factor(fc_used), color = sample_type)) +
+  geom_line(aes(group = flow_cell_id)) +
+  geom_point(alpha = .5, size = 2) +
+  labs(y = "Flow cell half-life [hours]", x = "Number of times flowcell was reused", 
+       color = "Sample type", title = "Reused flow cells") 
+```
+
+### **Fig. 6:** Compare flow cells for which the LFB or SFB buffer was used
+
+```{r}
+my_comparisons <- list(c("SFB", "LFB"))
+
+# compare fc_half-life between LFB and SFB
+# (NA runs == RNA runs)
+master_plus %>% 
+  select(run_id, LFB.or.SFB, fc_half_life_hours, sample_type) %>% 
+  distinct() %>% 
+  mutate_if(is.character, trimws) %>% 
+  ggplot(aes(x = LFB.or.SFB, y = fc_half_life_hours, color = LFB.or.SFB)) +
+  geom_boxplot() +
+  geom_point() +
+  stat_compare_means(method = "t.test", comparisons = my_comparisons) +
+  labs(y = "Flow cell half-life [hours]", x = "") +
+  theme(legend.position = "none")
+
+master_plus %>% 
+  select(run_id, LFB.or.SFB, fc_half_life_hours, sample_type) %>% 
+  distinct() %>% 
+  mutate_if(is.character, trimws) %>% 
+  ggplot(aes(x = LFB.or.SFB, y = fc_half_life_hours, color = sample_type)) +
+  geom_boxplot() +
+  geom_point() + 
+  facet_wrap(.~sample_type) +
+  labs(y = "Flow cell half-life [hours]", x = "") 
+```
+
+### **Fig. 7:** Flow cell age vs. flow cell half-life
+
+```{r}
+### Correlation: Flow cell age vs. flowcell half-life
+master_plus %>% 
+  select(sample_type, fc_age, fc_half_life_hours, fc_used, run_id, RNA.or.DNA) %>% 
+  distinct() %>% 
+  ggplot(aes(y = fc_half_life_hours, x = as.numeric(fc_age), color = RNA.or.DNA)) +
+  geom_point(alpha = 0.5, size = 2) +
+  facet_wrap(~sample_type) +
+  theme(legend.position = "none") +
+  labs(y = "Flow cell half-life [hours]", x = "Flow cell age [days]", color = "")
+```
+
+### **Fig. 8:** Things that do not have an influence on flow cell half-life
+
+```{r}
+### Correlation: Read length vs. flowcell half-life
+master_plus %>% 
+  drop_na(mean_rl) %>% 
+  select(sample_type, fc_half_life_hours, mean_rl) %>% 
+  distinct() %>% 
+  ggplot(aes(y = fc_half_life_hours, x = mean_rl, color = sample_type)) +
+  geom_point(alpha = 0.5, size = 2) +
+  geom_point(pch = 21, size = 2.2) +
+  scale_x_continuous(trans = "log10") +
+  scale_color_manual(values = c("bacteria" = sample_colors[1],
+                                "human" =  sample_colors[2],
+                                "insect" =  sample_colors[3],
+                                "metagenomic" =  sample_colors[4],
+                                "mouse" =  sample_colors[5],
+                                "protist" =  sample_colors[6],
+                                "synthetic" =  sample_colors[7],
+                                "virus" =  sample_colors[8],
+                                "plant" =  sample_colors[9])) +
+  labs(y = "Flow cell half-life [hours]", x = "Mean read length [kb]", color = "Sample type")
+
+master_plus %>% 
+  select(sample_type, fc_age, fc_half_life_hours, fc_used, run_id, starting_channel_number) %>% 
+  distinct() %>% 
+  ggplot(aes(y = fc_half_life_hours, x = starting_channel_number, color = sample_type)) +
+  geom_point(alpha = 0.5, size = 2) +
+  geom_point(pch = 21, size = 2.2) +
+  scale_color_manual(values = c("bacteria" = sample_colors[1],
+                                "human" =  sample_colors[2],
+                                "insect" =  sample_colors[3],
+                                "metagenomic" =  sample_colors[4],
+                                "mouse" =  sample_colors[5],
+                                "protist" =  sample_colors[6],
+                                "synthetic" =  sample_colors[7],
+                                "virus" =  sample_colors[8],
+                                "plant" =  sample_colors[9])) +
+  labs(y = "Flow cell half-life [hours]", x = "Number of active channels\nat the run start", color = "Sample type")
+
+master_plus %>% 
+  select(fc_half_life_hours, active.pores.QC, sample_type) %>% 
+  distinct() %>% 
+  ggplot(aes(y = fc_half_life_hours, x = active.pores.QC, color = sample_type)) +
+  geom_point(size = 2, alpha = .5) +
+  geom_point(pch = 21, size = 2.2) +
+  scale_color_manual(values = c("bacteria" = sample_colors[1],
+                                "human" =  sample_colors[2],
+                                "insect" =  sample_colors[3],
+                                "metagenomic" =  sample_colors[4],
+                                "mouse" =  sample_colors[5],
+                                "protist" =  sample_colors[6],
+                                "synthetic" =  sample_colors[7],
+                                "virus" =  sample_colors[8],
+                                "plant" =  sample_colors[9])) +
+  labs(x = "Active pores at start of the run", y = "Flow cell half-life [hours]", color = "Sample type")
+```
+
+### **Suppl. Fig. 1:** Overview of the all analyzed data
+
+```{r}
+# example runs
+ex_runs <- c("1679d44eb950d457b10e8763a9c156be5dcf9a48", 
+             "34e3ead9e9f6d619eb221b8e8628b0a6cae22893",
+             "e9f61e7442c7300752354732a1d4a269af01858f")
+
+master_plus %>% 
+  filter(run_id %in% ex_runs) %>% 
+  mutate(new_id = case_when(run_id == ex_runs[1] ~ "Sample 1",
+                               run_id == ex_runs[2] ~ "Sample 2",
+                               run_id == ex_runs[3] ~ "Sample 3")) %>%
+  ggplot(aes(x = hours_since_start, y= n_channels, color = new_id)) +
+  geom_line(show.legend = F) +
+  geom_vline(aes(xintercept = fc_half_life/3600), linetype = "dashed") +
+  facet_wrap(.~new_id, nrow = 3) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Flow cell half-life", x = "Time since start [hours]", y = "Number of channels")
+
+# Histogram of all pseudo half-life values without NAs
+master_plus %>% 
+  select(run_id, RNA.or.DNA, fc_half_life_hours) %>% 
+  distinct() %>% 
+  ggplot(aes(fc_half_life_hours, fill = RNA.or.DNA)) +
+  geom_histogram(color = "white", show.legend = F, bins = 20) +
+  facet_wrap(.~RNA.or.DNA, ncol = 1) +
+  labs(x = "Flowcell half-lifes [hours]")
+
+master_plus %>% 
+  dplyr::select(RNA.or.DNA, run_id) %>% 
+  distinct() %>%
+  ungroup() %>% 
+  dplyr::select(RNA.or.DNA) %>% 
+  count(RNA.or.DNA) %>% 
+  ggplot(aes(x = RNA.or.DNA, y = n, fill = RNA.or.DNA)) +
+  geom_bar(position = "stack", stat = "identity") +
+  labs(y = "Amount of analysed\nsequencing runs", x = "") +
+  theme(legend.position = "none")
+```
+
+### **Suppl. Fig. 2:** Flow cell half-life strongly depends on the sample type
+
+```{r}
+master_plus %>% 
+  select(sample_type, fc_age, fc_half_life_hours, fc_used, run_id, RNA.or.DNA, ng.library.loaded) %>% 
+  distinct() %>% 
+  ggplot(aes(y = fc_half_life_hours, x = ng.library.loaded, color = RNA.or.DNA)) +
+  geom_point(alpha = 0.5, size = 2) +
+  facet_wrap(~sample_type) +
+  theme(legend.position = "none") +
+  labs(y = "Flow cell half-life", x = "Amount of library loaded on flowcell [ng]", color = "")
+```
+

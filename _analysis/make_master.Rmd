@@ -1,0 +1,218 @@
+---
+title: "Make master dataframe for Meyer et al., 2023"
+author: "Damian Wollny"
+output:
+  html_document:
+    theme: paper
+    df_print: kable
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = T, warning = FALSE, message = FALSE)
+```
+
+```{r}
+library(tidyverse)
+theme_set(theme_classic(base_size=22))
+```
+
+### Clean up dry lab data (all drift_correction data + Number of sequenced bases data)
+
+```{r}
+# load table containing 'estimated bases' & 'run_id' information
+est_bases <- read.csv(file = "../_data/all_est_bases.csv", header = F) %>% 
+  as_tibble() %>% 
+  rename(est_bases = V1,
+         sample_id = V2,
+         run_id = V3) %>% 
+  select(-sample_id) %>% 
+  mutate(first_chars = str_sub(run_id, 1, 8))
+
+# load all drift master table (incl. estimated bases & run_id) and clean up
+all_drift <- read.csv(file = "../_data/all_cleaned_drifts.csv") %>% 
+  as_tibble() %>% 
+  filter(sample_id != "sample_id") %>% 
+  rename(first_chars = "f72c3776") %>% 
+  # add est_bases
+  left_join(., est_bases, by = "first_chars") %>% 
+  # add flow_cell_id to one run, for which the drift correction file had an empty column for flow_cell_id
+  mutate(flow_cell_id = if_else(sample_id == "20201022_FAO86834_Criket_S1_SREcleanup_run2", "FAO86834", flow_cell_id)) 
+```
+
+### Clean up wetlab data
+
+```{r}
+milena <- read.csv(file = "../_data/wetlab_data_230607.csv", 
+                   skip = 0, sep = ",", na.strings=c("","NA")) %>% 
+  as_tibble() %>%
+  rename(run_id = Run.Id) %>% 
+  # remove all runs for which we do not have a run_id
+  filter(!grepl("/", run_id),
+         !is.na(run_id)) %>% 
+  # remove all runs for which we don't have information about "ng.library.loaded"
+  filter(!is.na(ng.library.loaded)) %>% 
+  # remove non-informative columns
+   .[,c(1:20)] %>% 
+  # remove the trailing "." from some date.reveived entries
+  mutate(date.received = str_remove(date.received, "\\.$")) %>% 
+  # reformat date.used from "07.12.2020" into "2020-12-07"
+  mutate(date.used = str_replace_all(date.used,"\\.", "-")) %>%
+  mutate(date.used = as.Date(date.used, format = "%d-%m-%Y")) %>%
+  # reformat date.received - note: Andi-Kiel_Corona entires have "from Celia" in date.received -> NA
+  mutate(date.received = str_replace_all(date.received,"\\.", "-")) %>%
+  mutate(date.received = as.Date(date.received, format = "%d-%m-%Y")) %>%
+  mutate(fc_age = date.used - date.received) 
+
+# in 'Wash' column replace NA with 0
+milena$Wash[is.na(milena$Wash)] <- 0
+```
+
+### Merge wetlab and drylab data (by run_id)
+
+```{r}
+# merge dfs
+master <- left_join(milena, all_drift, by = "run_id")
+
+# convert columns containing number to numeric
+master[,c(6,7,12:16,18,22:29,33)] <- sapply(master[,c(6,7,12:16,18,22:29,33)],as.numeric)
+
+# remove missing runs from master
+master_clean <- master %>% 
+  filter(!is.na(sample_id)) %>% 
+  # kick out an insect run that has just one datapoint
+  filter(run_id != "3641ee4bc582198e35847f03ae092e526886dcc5")
+```
+
+### Add relevant data to master dataframe
+
+```{r}  
+# calculate number of times the flow cell was used for each run
+fc_count <- master_clean %>% 
+  select(run_id, flow_cell_id, date.used, active.pores.QC) %>% 
+  distinct() %>% 
+  group_by(flow_cell_id) %>% 
+  filter(!is.na(flow_cell_id)) %>% 
+  arrange(date.used) %>% 
+  mutate(fc_used = row_number()) %>% 
+  ungroup() %>% 
+  select(-flow_cell_id)
+
+# columns specifiying the species sequenced
+bac <- c("klebsiella", "abaumanii", "pseudomonas", "mycoplasma", "lactobacillus", "acetobacter", "xantho", "planctos")
+vir <- c("corona", "hcv", "ppv", "chlamy")
+ins <- c("Cricket")
+wat <- c("FIDS", "Gharmukteshwar", "Kanpur", "Kumbh", "AquaDiva", "KNP", "All")
+mic <- c("mice", "MT")
+hum <- c("neck", "oncgnostics")
+amo <- "discoideum" 
+art <- c("A ", "U ")
+pla <- c("Baccharis")
+
+# median read length
+read_length <- read.csv(file = "../_data/20230316_readLength.txt", sep = "\t", header = F) %>%
+  as_tibble() %>% 
+  rename(run_id = V1,
+         mean_rl = V2) %>% 
+  mutate(mean_rl = as.numeric(mean_rl))
+
+# some runs have multiple values for read length - probably because they were base called multiple times. We will flag them in the master_plus table
+multi_rl <- read_length %>% count(run_id, sort = T) %>% filter(n > 1) %>% pull(run_id)
+
+### flow cell half-lifes calculated by Daria using the logistic regression model
+hlt <- read.csv(file = "../_data/halflifetimes_curated20230526.txt", sep = "") %>% 
+  rename(run_id = runids,
+         fc_half_life = hlt)
+
+### generate final master dataframe (incl. fc_half-life, species, read_length etc)
+pre_master_plus <- master_clean %>% 
+  # add daria's flow cell half lifes
+  left_join(., hlt, by = "run_id") %>% 
+  # add # of channel at start of the run
+  group_by(run_id) %>% 
+  mutate(starting_channel_number = first(n_channels)) %>% 
+  ungroup() %>% 
+  # add column specifying the species sequenced
+  mutate(x = if_else(grepl(paste(bac, collapse="|"), sample, ignore.case = T), "bacteria", "NA")) %>% 
+  mutate(x = if_else(grepl(paste(vir, collapse="|"), sample, ignore.case = T), "virus", x)) %>% 
+  mutate(x = if_else(grepl(paste(ins, collapse="|"), sample, ignore.case = T), "insect", x)) %>% 
+  mutate(x = if_else(grepl(paste(mic, collapse="|"), sample, ignore.case = T), "mouse", x)) %>% 
+  mutate(x = if_else(grepl(paste(wat, collapse="|"), sample, ignore.case = T), "metagenomic", x)) %>% 
+  mutate(x = if_else(grepl(paste(hum, collapse="|"), sample, ignore.case = T), "human", x)) %>% 
+  mutate(x = if_else(grepl(paste(amo, collapse="|"), sample, ignore.case = T), "protist", x)) %>% 
+  mutate(x = if_else(grepl(paste(art, collapse="|"), sample, ignore.case = F), "synthetic", x)) %>% 
+  mutate(x = if_else(grepl(paste(pla, collapse="|"), sample, ignore.case = F), "plant", x)) %>% 
+  rename(sample_type = x) %>% 
+  # add number of times the flow cell was used for each run
+  left_join(., fc_count, by = c("run_id", "date.used", "active.pores.QC")) %>% 
+  # add read length information
+  left_join(., read_length, by = "run_id") %>% 
+  # do we have just one read length value / run?
+  mutate(multiple_read_length = if_else(run_id %in% multi_rl, TRUE, FALSE))
+```
+
+### Dealing with duplicates
+
+The duplicates resulted from washing without restarting the runs\
+-> the same run_id before and after wash\
+-> we need to:\
+a) set fc_half_life = NA because the half-lifes are strongly overestimated due to washing\
+b) set est_bases before LAST wash = NA, since the number correspondes to only that\
+
+```{r}
+### duplicate runs
+dupl <- pre_master_plus %>% 
+  filter(run_id %in% c("bf7c98609c4490274c25f2864246d209662f779f",
+                       "72e79e840903103566a33bc797bf53c4279126a4",
+                       "8b220b327a2441e0cc1174e8b011c46d0c2394ad",
+                       "4d641722891f373da1e38aadd9a94c2ce2fbaafb",
+                       "7e9e6a0cd189dbd2a82e7d346ab4ae7ff13c5231",
+                       "1ad29a86946fd0a21e0a24324e6c2fc3c028d262",
+                       "8ae4c0a30174e3bf5bfd31eab6169792c890600c",
+                       "18bff7b0079ca60eb10c4ba6847baac48b7d478e",
+                       "057fc2fea0f5bb4572cf5a5c74035df20bad56ea",
+                       "3454d241bdb8671fb9cc9b6c6fa24ae9279e89d4",
+                       "8097d79f4613a42252b0a2f9d5213ef42a9641dc",
+                       "c4e978fd2ad1f89fcf580a4a3cea6182ea84c0aa",
+                       "c8abab3843ca59778245b115eb1b86f879738b16",
+                       "c6441230eae4da098e506c731d12fa1d85bf9142",
+                       "fffb18fb20a7357fecc8e200d539a7846a2df149",
+                       "bae614f49a60fee4db1a05ae5593e6ca66a68948")) %>% 
+  pull(run_id)
+
+### master_plus WITHOUT duplicate runs
+master_plus_without_dups <- pre_master_plus %>% 
+  filter(!run_id %in% dupl) 
+
+### master_plus WITH ONLY duplicate runs
+master_plus_dups <- pre_master_plus %>% 
+  filter(run_id %in% dupl) %>% 
+  # set fc_half_life = NA because the half-lifes are strongly overestimated due to washing
+  mutate(fc_half_life = NA) %>% 
+  # est_bases = number of bases sequenced after THE LAST wash. set est_bases before wash = NA
+  group_by(run_id) %>% 
+  mutate(est_bases = if_else(Wash == max(Wash), est_bases, NA_real_)) %>% 
+  ungroup()
+
+### combine data with / without duplicates
+master_comb <- bind_rows(master_plus_without_dups, master_plus_dups)
+
+### for runs which were basecalled twice, we have two mean_rl for the same run -> Manja decided to select the longer read_length
+# get shorter read_lengths:
+short_rls <- master_comb %>% 
+  filter(multiple_read_length == T) %>% 
+  select(run_id, flow_cell_id, multiple_read_length, mean_rl, fc_used) %>% distinct() %>% 
+  group_by(run_id) %>% 
+  arrange(desc(mean_rl)) %>% 
+  mutate(pick = row_number()) %>% 
+  filter(pick == 2) %>% 
+  pull(mean_rl)
+
+# kick out from master:
+master_plus <- master_comb %>% 
+  filter(!mean_rl %in% short_rls) 
+
+saveRDS(master_plus, file = "../_analysis/master_plus.RDS")
+```
