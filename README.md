@@ -1,4 +1,4 @@
-# Metaanalysis of >200 nanopore sequencing runs \ (Meyer et al., 2023)
+# Metaanalysis of >200 nanopore sequencing runs\ (Meyer et al., 2023)
 
 ### Goal
 Over the course of many years we have sequenced RNA and DNA from a large variety of species. When we compared different sequencing runs we have noticed that the performance of Oxford Nanopore Minion flow cells varied drastically across runs. In order systematically analyse which factors do or do not influence the lifetime of a flowcell (and consequently the number of sequenced bases) we analyses several parameters that vary across sequencing runs.
