@@ -1,7 +1,7 @@
 # Metaanalysis of >200 nanopore sequencing runs <br /> (Meyer et al., 2023)
 
 ### Goal
-Over the course of many years we have sequenced RNA and DNA from a large variety of species. When we compared different sequencing runs we have noticed that the performance of Oxford Nanopore Minion flow cells varied drastically across runs. In order systematically analyse which factors do or do not influence the lifetime of a flowcell (and consequently the number of sequenced bases) we analyses several parameters that vary across sequencing runs.
+Over the course of many years we have sequenced RNA and DNA from a large variety of species. When we compared different sequencing runs we have noticed that the performance of Oxford Nanopore Minion flow cells varied drastically across runs. In order to systematically analyse which factors do or do not influence the lifetime of a flowcell (and consequently the number of sequenced bases) we analysed several parameters that vary across sequencing runs.
 
 ### Input data from the wetlab
 - Data related to wetlab (e.g. amount of library loaded on flowcell etc) was manually gathered by the staff in the laboratory. All information can be found at ./_data/wetlab_data_230607.csv.
@@ -16,7 +16,7 @@ Over the course of many years we have sequenced RNA and DNA from a large variety
 - All wetlab and drylab input data were cleaned and combined into single dataframe using the script ./_data/make_master.Rmd. The dataframe can be found at ./_data/master_plus.RDS.
 
 ### Analyses
-- The analyses for all Figures related to flow cell half-life were based on data at ./_analysis/master_plus.RDS. The code to reproduce the figures can be found at ./_analysis/nanopore_meta.Rmd
+- The analyses for all figures related to flow cell half-life were based on data at ./_analysis/master_plus.RDS. The code to reproduce the figures can be found at ./_analysis/nanopore_meta.Rmd
 
 ### Contact
 - For any questions, please contact <daria.meyer@uni-jena.de>, <damian.wollny@uni-jena.de>, <manja@uni-jena.de>
