@@ -1,5 +1,7 @@
 ## Extract the runID and flowcell ID from the final summary
 
+## old & new minKNOW version:
+
 # run ID
 cat final_summary_FAV24719_9d080e8b_e25b706d.txt | grep 'acquisition_run_id' | sed 's/^.*=//'
 
