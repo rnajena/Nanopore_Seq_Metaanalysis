@@ -1,5 +1,4 @@
 ## How to get estimated number of sequenced bases from the different potential output files
-
 ## old & new MinKNOW version:
 
 # From the troughtput file haven the following syntax: throughput_<FC>_<run>.csv
