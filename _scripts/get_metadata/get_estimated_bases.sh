@@ -1,5 +1,5 @@
 ## How to get estimated number of sequenced bases from the different potential output files
 
-## throughput_<FC>_<run>.csv
-tail -n1 throughput_FAR96408_8097d79f.csv | cut -d ',' -f8
+## From the troughtput file haven the following syntax: throughput_<FC>_<run>.csv
+awk -F ',' -v col='Estimated Bases' 'NR==1{for(i=1;i<=NF;i++){if($i==col){c=i;break}} print $c} NR>1{print $c}' throughput_<FC>_<run>.csv | tail -n1
 
