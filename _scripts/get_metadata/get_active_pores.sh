@@ -7,3 +7,9 @@ awk -F , '{if ($35==1 && $27==1){print $0}}' mux_scan_data_<fc_id>_<run_id>.csv 
 
 ## new minKNOW version
 head -n 2049 pore_scan_data_<fc_id>_<run_id>_<run_id>.csv | awk -F ',' -v col='mux_scan_assessment' 'NR==1{for(i=1;i<=NF;i++){if($i==col){c=i;break}} print $c} NR>1{print $c}' | grep 'single_pore\|other' | wc -l
+
+
+
+## Extract the number of active Channels at the run start
+head -n 2 drift_correction_<fc_id>_<run_id>.csv | awk -F ',' -v col='n_channels' 'NR==1{for(i=1;i<=NF;i++){if($i==col){c=i;break}} print $c} NR>1{print $c}' | tail -n1
+
