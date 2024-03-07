@@ -18,8 +18,10 @@ import pandas as pd
 # Instantiate the parser
 parser = argparse.ArgumentParser(description='Extract metadate from nanopore sequencing runs from all subfolders')
 parser.add_argument('--infolder', help='Given input folder (absolute path) which contains data for multiple sequencing runs with one folder containing data for one run.')
+parser.add_argument('--outfile', help='Give an output folder name where the stats will be stored.')
 args = parser.parse_args()
 infolder = args.infolder
+outfile = args.outfile
 
 ## Extract a list with all direct subfolders. Each folder should contain data from one sequencing run.
 dataFolders =  [f.path for f in os.scandir(infolder) if f.is_dir() ]
@@ -141,23 +143,26 @@ def getActiveChannelsFromSeqSummary(seqSummary : str) -> str:
 	# # count the unique channels in each 5 minutes
 	# chan_counts = groups['channel'].apply(lambda x: len(x.unique()))
 
-## Initiate all needed parameters
-runId = ""
-runId_report = ""
-fcId = ""
-fcId_report = ""
-startDate = ""
-startDate_report = ""
-sampleId = ""
-estBases = 0
-activePores = 0
-activeChannels = ""
+
 
 # print(f"runId\tfcId\tstartDate\testBases")
 # results = [["runID", "fcID", "startDate", "estBases"]]
 results = []
 
 for runFolder in dataFolders:
+	## Initiate all needed parameters
+	runId = ""
+	runId_report = ""
+	fcId = ""
+	fcId_report = ""
+	startDate = ""
+	startDate_report = ""
+	sampleId = ""
+	estBases = 0
+	activePores = 0
+	activeChannels = ""
+	activeChannels_seqSummary = ""
+
 	summaryExists = False
 	throughputExists = False
 	for dirpath, dirnames, filenames in os.walk(runFolder):
@@ -194,10 +199,6 @@ for runFolder in dataFolders:
 				poreScan = os.path.join(dirpath, filename)
 				activePores = getActivePoresFromPoreScan(poreScan)
 
-			elif filename.startswith("pore_scan_data"):
-				poreScan = os.path.join(dirpath, filename)
-				activePores = getActivePoresFromPoreScan(poreScan)
-
 			elif filename.startswith("drift_correction"):
 				driftCorrection = os.path.join(dirpath, filename)
 				activeChannels = getActiveChannelsFromDriftCorrection(driftCorrection)
@@ -207,15 +208,15 @@ for runFolder in dataFolders:
 				activeChannels_seqSummary = getActiveChannelsFromSeqSummary(seqSummary)
 
 	## Use data from report file if final summary does not exist
-	if(runId == None):
+	if(not runId):
 		runId = runId_report
-	if(fcId == None):
+	if(not fcId):
 		fcId = fcId_report
-	if(startDate == None):
+	if(not startDate):
 		startDate = startDate_report
-	if(sampleId == None):
+	if(not sampleId):
 		sampleId = sampleId_report
-	if(activeChannels == None):
+	if(not activeChannels):
 		activeChannels = activeChannels_seqSummary
 	
 	## Add all metadata for this run into a results file
@@ -223,10 +224,9 @@ for runFolder in dataFolders:
 	# print(f"{runId}\t{fcId}\t{startDate}\t{estBases}")
 
 ## Output all metadata to file
-with open('metadataExtraced.tsv', 'a') as f:
+with open(outfile, 'w') as f:
 	f.write(f"runId\tfcId\tstartDate\testBases\tactivePores\tactiveChannels\tsampleId\n")
 	for run in results:
 		for value in run:
 			f.write(f"{value}\t")
 		f.write(f"\n")
-
